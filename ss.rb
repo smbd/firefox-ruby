@@ -5,19 +5,20 @@ require 'selenium-webdriver'
 require 'fileutils'
 require 'mini_magick'
 
-require 'pp'
+browser_toolbar_height = 162
+ss_path = "/tmp/ss.png"
 
 options = {
-  :width  => "1000",
-  :height => "1000",
+  :width  => 1000,
+  :height => 840,
 }
 
 OptionParser.new { |opt|
-  opt.on('-w WIDTH', '--width WIDTH', 'browser width') { |v| options[:width] = v }
-  opt.on('-h HEIGHT', '--height HEIGHT', 'browser height') { |v| options[:height] = v }
+  opt.on('-w WIDTH', '--width WIDTH', 'viewport width') { |v| options[:width] = v }
+  opt.on('-h HEIGHT', '--height HEIGHT', 'viewport height') { |v| options[:height] = v }
   opt.on('-s SELECTOR', '--selector SELECTOR', 'CSS selector of element that should be displayed') { |v| options[:selector] }
   opt.on('-x XPATH', '--xpath XPATH', 'XPath of element that should be displayed') { |v| options[:selector] }
-  
+
   opt.parse!(ARGV)
 }
 
@@ -33,42 +34,34 @@ else
   exit 1
 end
 
+#Selenium::WebDriver.logger.level = :debug
 
-selenium_opts = Selenium::WebDriver::Firefox::Options.new
-selenium_opts.args = ["--headless", "--height=#{options[:height]}", "--width=#{options[:width]}" ]
-selenium_opts.profile = Selenium::WebDriver::Firefox::Profile.from_name "default-release"
+service = Selenium::WebDriver::Service.firefox
+service.executable_path = "/usr/local/bin/geckodriver"
 
-driver = Selenium::WebDriver.for(:firefox, capabilities: selenium_opts)
-driver.navigate.to @url
+opts = Selenium::WebDriver::Options.firefox
+opts.args = ["--headless"]
 
-wait = Selenium::WebDriver::Wait.new(:timeout => 10)
+begin
+  driver = Selenium::WebDriver.for(:firefox, options: opts, service: service)
+  driver.manage.timeouts.implicit_wait = 5
+  wait = Selenium::WebDriver::Wait.new(:timeout => 5)
 
-if options[:selector]
-  wait.until { driver.find_element(:css, options[:selector]).displayed? }
-elsif options[:xpath]
-  wait.until { driver.find_element(:xpath, options[:xpath]).displayed? }
-else
-  sleep 3
+  driver.manage.window.resize_to(options[:width].to_i, options[:height].to_i + browser_toolbar_height)
+  driver.navigate.to @url
+
+  if options[:selector]
+    wait.until { driver.find_element(:css, options[:selector]).displayed? }
+  elsif options[:xpath]
+    wait.until { driver.find_element(:xpath, options[:xpath]).displayed? }
+  else
+    sleep 3
+  end
+
+  sleep 2
+
+  driver.save_screenshot(ss_path)
+  puts "Screenshot: #{ss_path} is saved"
+ensure
+  driver.quit
 end
-
-sleep 10
-
-year  = Time.now.strftime('%Y')
-month = Time.now.strftime('%m')
-date  = Time.now.strftime('%d')
-time  = Time.now.strftime('%H%M')
-
-ss_dir = "/save/#{year}/#{month}/#{date}"
-FileUtils.mkdir_p(ss_dir)
-
-ss_basename="ss_#{time}"
-
-driver.save_screenshot("#{ss_dir}/ss.png")
-driver.quit
-
-img = MiniMagick::Image.open("#{ss_dir}/ss.png")
-img.format('webp')
-img.quality(70)
-img.write("#{ss_dir}/#{ss_basename}.webp")
-
-File.delete("/#{ss_dir}/ss.png")
